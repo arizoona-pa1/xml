@@ -1,87 +1,89 @@
 <?php
 class XML
 {
-    private $path = "XML/";
     public readonly string $file;
+
     function __construct(string $file)
     {
-        $this->file = $this->path . $file;
+        $this->file = $file;
     }
-    function AutoCreateTag($parents, $append, $xml)
+
+    private function createAttributes(DOMElement $element, array $attributes): void
     {
-        foreach ($append as $parent => $value) {
-            if (gettype($value) == 'array') {
-                if (str_replace('@', '', $parent) == 'attributes') {
-                    foreach ($value as $key => $key_value) {
-                        $attr_user_id[] = new DOMAttr($key, $key_value);
-                    }
+        foreach ($attributes as $key => $value) {
+            $element->setAttribute($key, $value);
+        }
+    }
+
+    private function autoCreateTag(DOMElement $parent, array $children, DOMDocument $xml): void
+    {
+        foreach ($children as $tag => $content) {
+            if (is_array($content)) {
+                if ($tag === '@attributes') {
+                    $this->createAttributes($parent, $content);
                 } else {
-                    $parent = $xml->createElement($parent);
-                    $this->AutoCreateTag($parent, $value, $xml);
+                    // Check if the tag is meant to be repeated
+                    if (array_keys($content) === range(0, count($content) - 1)) {
+                        // Handle repeated tags
+                        foreach ($content as $childContent) {
+                            $childElement = $xml->createElement($tag);
+                            $this->autoCreateTag($childElement, $childContent, $xml);
+                            $parent->appendChild($childElement);
+                        }
+                    } else {
+                        // Handle non-repeated tags
+                        $childElement = $xml->createElement($tag);
+                        $this->autoCreateTag($childElement, $content, $xml);
+                        $parent->appendChild($childElement);
+                    }
                 }
             } else {
-                $parent = $xml->createElement($parent, $value);
-            }
-            if (gettype($parent) == "string") {
-                if (str_replace('@', '', $parent) == 'attributes') {
-                    foreach ($attr_user_id as $attr) {
-                        $parents->setAttributeNode($attr);
-                    }
-                } else {
-                    die("failed");
-                }
-            } else {
-                $parents->appendChild($parent);
+                $childElement = $xml->createElement($tag, $content);
+                $parent->appendChild($childElement);
             }
         }
     }
-    function appendXML(string $root, $append, $unique = null)
+
+    public function appendXML(string $rootTag, array $content, array $unique = null): void
     {
         $xml = new DOMDocument();
         $xml->formatOutput = true;
-        if (file_exists($this->file)) {
-            $xml->preserveWhiteSpace = false;
-            $xml->load($this->file) or die('file has problem');
-            $root = $xml->getElementsByTagName($root)->item(0);
+        $xml->preserveWhiteSpace = false;
 
-            if (isset($unique['tag'])) {
-                $searchNodes = $xml->getElementsByTagName($unique['tag']);
-
-                foreach ($searchNodes as $searchNode) {
-                    foreach ($unique['attr'] as $x => $x_value) {
-                        $valueAttr = $searchNode->getAttribute($x);
-                        if ($valueAttr == $x_value) {
-                            $nodeToRemove = $searchNode;
-                        } else {
-                            $nodeToRemove = false;
-                            break;
-                        }
-                    }
-                    if ($nodeToRemove) {
-                        $root->removeChild($nodeToRemove);
-                    }
-                }
-            }
+        if (file_exists($this->file) && $xml->load($this->file)) {
+            $root = $xml->getElementsByTagName($rootTag)->item(0);
         } else {
             $xml->encoding = 'UTF-8';
             $xml->xmlVersion = '1.0';
-            $root = $xml->createElement($root);
+            $root = $xml->createElement($rootTag);
             $xml->appendChild($root);
         }
 
-        $this->AutoCreateTag($root, $append, $xml);
-        if ($xml->save($this->file)) {
-            // echo "$this->file has been successfully Appended";
-        } else {
-            // echo "failed";
+        if ($unique !== null) {
+            $this->removeUniqueNodes($xml, $root, $unique);
+        }
+
+        $this->autoCreateTag($root, $content, $xml);
+
+        if (!$xml->save($this->file)) {
+            die("Failed to save XML file.");
+        }
+    }
+
+    private function removeUniqueNodes(DOMDocument $xml, DOMElement $root, array $unique): void
+    {
+        $searchNodes = $xml->getElementsByTagName($unique['tag']);
+        foreach ($searchNodes as $node) {
+            $match = true;
+            foreach ($unique['attr'] as $attr => $value) {
+                if ($node->getAttribute($attr) !== $value) {
+                    $match = false;
+                    break;
+                }
+            }
+            if ($match) {
+                $root->removeChild($node);
+            }
         }
     }
 }
-// $xmldata = simplexml_load_file("XML/employee.xml") or die("we cannot find this url");
-//  get attribute 
-// echo "<pre>";
-// print_r( $xmldata->employee[0]["name"]);
-// echo $xmldata->employee[0]["name"];
-// echo "</pre>";
-
-?>
